@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Farm Automation App</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- LOGIN PAGE -->
+<div id="loginPage" class="login-container">
+  <div class="top-text">
+    <span class="developer">APP DEVELOPER: CHRISOSTIVE JASON</span>
+    <div id="clock"></div>
+    <div id="networkStatus"></div>
+  </div>
+
+  <h2 class="title">AUTOMATION SYSTEM LOGIN</h2>
+
+  <div class="role-select">
+    <button id="adminBtn" onclick="selectRole('admin')">🏛️ ADMINISTRATOR</button>
+    <button id="userBtn" onclick="selectRole('user')">👥 USER</button>
+  </div>
+
+  <div class="input-group">
+    <label>USERNAME</label>
+    <input type="text" id="username">
+  </div>
+
+  <div class="input-group">
+    <label>PASSWORD</label>
+    <input type="password" id="password">
+  </div>
+
+  <div class="options">
+    <input type="checkbox" onclick="togglePassword()"> Show Password
+    <span class="forgot" onclick="forgotPassword()">Forgot Password?</span>
+  </div>
+
+  <button class="login-btn" onclick="login()">LOGIN</button>
+  <div id="feedback"></div>
+</div>
+
+<!-- FORGOT PASSWORD DIALOG -->
+<div id="dialog" class="dialog">
+  <div class="dialog-box">
+    <p>📞 KINDLY CONTACT THE SENIOR ADMINISTRATOR<br><b>0712372471</b></p>
+    <button onclick="closeDialog()">OK</button>
+  </div>
+</div>
+
+<!-- DASHBOARD PAGE -->
+<div id="dashboardPage" class="dashboard-container" style="display:none;">
+
+  <!-- HEADER ROW -->
+ <div class="header-row">
+  <span id="roleDisplay">ROLE</span>
+  <span id="welcomeUser">WELCOME USER</span>
+  <span id="loginTime">LOGIN TIME</span>
+  <span id="networkStatusDash"></span>   <!-- dynamically updated -->
+  <span id="dashboardClock">--:--:-- EAT</span>  <!-- live clock -->
+  <button class="logout-btn" onclick="logout()">LOG OUT</button>
+</div>
+ 
+  <div class="horizontal-line"></div>
+
+  <div class="main-dashboard">
+    <!-- SIDEBAR -->
+    <div class="sidebar">
+      <div class="icon-row">
+        <button class="menu-btn" onclick="openMenu('userManagement')">👥</button>
+        <span class="icon-label">User Management</span>
+      </div>
+      <div class="icon-row">
+        <button class="menu-btn" onclick="openMenu('settings')">⚙️</button>
+        <span class="icon-label">Settings</span>
+      </div>
+      <div class="icon-row">
+        <button class="menu-btn" onclick="openMenu('statistics')">📊</button>
+        <span class="icon-label">Statistics</span>
+      </div>
+      <div class="icon-row">
+        <button class="menu-btn" onclick="openMenu('passwordPolicies')">🔑</button>
+        <span class="icon-label">Password Policies</span>
+      </div>
+      <div class="icon-row">
+        <button class="menu-btn" onclick="openMenu('wallpapers')">🖼</button>
+        <span class="icon-label">Wallpapers</span>
+      </div>
+      <div class="icon-row">
+        <button class="menu-btn" onclick="openMenu('changePassword')">🔓</button>
+        <span class="icon-label">Change Password</span>
+      </div>
+      <div class="vertical-line"></div>
+    </div>
+
+    <!-- WD AREA -->
+    <div class="wd-area" id="wdArea">
+
+      <div id="wdMainContent" style="width:100%; display:flex; flex-direction:column; align-items:center;">
+
+        <!-- WD MAIN ICONS -->
+        <div class="wd-icons">
+          <button class="wd-icon-btn wd-icon-planting" onclick="openWDDialogue('planting')">🌱 PLANTING</button>
+          <button class="wd-icon-btn wd-icon-weeding" onclick="openWDDialogue('weeding')">🌿 WEEDING</button>
+          <button class="wd-icon-btn wd-icon-fertilizer" onclick="openWDDialogue('fertilizer')">🧱 FERTILIZER</button>
+          <button class="wd-icon-btn wd-icon-harvesting" onclick="openWDDialogue('harvesting')">🌾 HARVESTING</button>
+        </div>
+
+        <!-- ADD/REMOVE FARMS -->
+        <div class="farm-control">
+          <button onclick="addFarm()">+</button>
+          <button onclick="removeFarm()">-</button>
+        </div>
+
+      </div>
+
+      <!-- WD DIALOGUE -->
+      <div id="wdDialogue" class="wd-dialogue">
+        <button class="back-btn" onclick="closeWDDialogue()">BACK</button>
+        <div id="wdTableContainer"></div>
+      </div>
+
+    </div>
+  </div>
+<div id="fundDialog" class="dialog">
+  <div class="dialog-box">
+    <p><b>Select Fund Type</b></p>
+    <button onclick="selectFund('oneacre')">🌱 One Acre Fund</button><br><br>
+    <button onclick="selectFund('normal')">🌾 Normal</button><br><br>
+    <button class="back-btn-fund" onclick="closeFundDialog()">🔙 BACK</button>
+  </div>
+</div>
+  <!-- MENU BOX -->
+<div id="menuBox" class="menu-box">
+  <div class="menu-box-header">
+    <button class="back-btn" onclick="closeMenu()">🔙</button>
+    <span id="menuTitle">Menu</span>
+  </div>
+  <div class="menu-box-content" id="menuContent">
+    <!-- Menu content will go here -->
+  </div>
+</div> 
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
