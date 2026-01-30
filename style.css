@@ -679,4 +679,27 @@ text-shadow: 0 0 5px #fff, 0 0 10px #ffd700, 0 0 20px #ffcc00;
     opacity 0.9s cubic-bezier(0.4, 0, 0.2, 1);
   transition-delay: 0.45s;
 }
+/* DIALOGUE ENTER/EXIT ANIMATION – from left to right */
+.dialog, .menu-box, .wd-dialogue {
+  position: absolute;       /* keep overlay positioning */
+  opacity: 0;               /* invisible by default */
+  transform: translateX(-100%); /* start fully left of WD area */
+  transition: transform 0.5s ease, opacity 0.5s ease; /* smooth movement */
+  pointer-events: none;     /* prevent clicks when hidden */
+}
+
+/* When they become visible (JS still controls display/active) */
+.dialog.active, .menu-box.active, .wd-dialogue.active {
+  opacity: 1;               /* fade in */
+  transform: translateX(0); /* slide to center */
+  pointer-events: auto;     /* clickable */
+}
+
+/* Optional: exit effect (progressively move right) */
+.dialog.exit, .menu-box.exit, .wd-dialogue.exit {
+  opacity: 0;
+  transform: translateX(100%); /* slide out to right */
+  pointer-events: none;
+}
+
 
