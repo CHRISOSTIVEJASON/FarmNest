@@ -1,488 +1,647 @@
-let selectedFundType = null;
+/* =========================================================
+   FARM AUTOMATION APP - CORE LOGIC
+   Developer: CHRISOSTIVE JASON
+   ========================================================= */
+
+// APP STATE
+let selectedFundType = "normal";
 let pendingWDType = null;
 let selectedRole = null;
 let currentUser = null;
 let usersTempUsername = "";
 
-// Auto-logout when user leaves or refreshes
-window.addEventListener("beforeunload", () => {
-  if(currentUser){
-    const rec = records.find(r => r.username === currentUser.username && !r.logoutTime);
-    if(rec){
-      rec.logoutTime = new Date().toLocaleString(); // record logout time
-      localStorage.setItem("records", JSON.stringify(records));
-    }
-  }
-}); // USERS
+// USERS STORAGE INITIALIZATION
 let users = JSON.parse(localStorage.getItem("users")) || [
-  { username:"Jason", password:"14533", role:"admin", senior:true, protected:true }
+  { username: "Jason", password: "14533", role: "admin", senior: true, protected: true }
 ];
 
 // LOGIN RECORDS
 let records = JSON.parse(localStorage.getItem("records")) || [];
 
-// FARMS & DATA
-let farms = JSON.parse(localStorage.getItem("farms")) || ["Farm 1","Farm 2"];
-let farmData = JSON.parse(localStorage.getItem("farmData")) || {};
+// FARMS & DATA STRUCTURE
+let farms = JSON.parse(localStorage.getItem("farms")) || ["Farm 1", "Farm 2"];
+let farmData = JSON.parse(localStorage.getItem("farmData")) || {
+  oneacre: {},
+  normal: {}
+};
+
+// Ensure fund keys exist
+if (!farmData.oneacre) farmData.oneacre = {};
+if (!farmData.normal) farmData.normal = {};
+
+function initFarmDataStructure(fundType, farmName) {
+  if (!farmData[fundType]) farmData[fundType] = {};
+  if (!farmData[fundType][farmName]) {
+    farmData[fundType][farmName] = {
+      planting: { seedBags: 0, dap: 0, noPeople: 0 },
+      weeding: { noPeople: 0 },
+      fertilizer: { can: 0, urea: 0, noPeople: 0 },
+      harvesting: { noPeople: 0, output: 0 }
+    };
+  }
+}
+
+// Initialize all existing farms in both fund categories
 farms.forEach(f => {
-  if(!farmData[f]) farmData[f]={planting:{seedBags:0,dap:0,noPeople:0},weeding:{noPeople:0},fertilizer:{can:0,urea:0,noPeople:0},harvesting:{noPeople:0,output:0}};
+  initFarmDataStructure("oneacre", f);
+  initFarmDataStructure("normal", f);
 });
-localStorage.setItem("farms",JSON.stringify(farms));
-localStorage.setItem("farmData",JSON.stringify(farmData));
+localStorage.setItem("farms", JSON.stringify(farms));
+localStorage.setItem("farmData", JSON.stringify(farmData));
+
+// PERSIST LOGOUT ON LEAVING PAGE
+window.addEventListener("beforeunload", () => {
+  if (currentUser) {
+    const rec = records.find(r => r.username === currentUser.username && !r.logoutTime);
+    if (rec) {
+      rec.logoutTime = new Date().toLocaleString();
+      localStorage.setItem("records", JSON.stringify(records));
+    }
+  }
+});
 
 // ROLE SELECTION
-function selectRole(role){
+function selectRole(role) {
   selectedRole = role;
   const adminBtn = document.getElementById("adminBtn");
   const userBtn = document.getElementById("userBtn");
-  if(role==="admin"){ adminBtn.classList.remove("inactive"); userBtn.classList.add("inactive"); }
-  else{ userBtn.classList.remove("inactive"); adminBtn.classList.add("inactive"); }
+  if (role === "admin") {
+    adminBtn.classList.remove("inactive");
+    userBtn.classList.add("inactive");
+  } else {
+    userBtn.classList.remove("inactive");
+    adminBtn.classList.add("inactive");
+  }
 }
 
-// PASSWORD TOGGLE
-function togglePassword(){
-  const p=document.getElementById("password");
-  p.type = p.type==="password" ? "text":"password";
+// PASSWORD VISIBILITY TOGGLE
+function togglePassword() {
+  const p = document.getElementById("password");
+  p.type = p.type === "password" ? "text" : "password";
 }
 
-// LOGIN
-function login(){
-  const u=document.getElementById("username").value.trim();
-  const p=document.getElementById("password").value.trim();
-  const feedback=document.getElementById("feedback");
-  if(!selectedRole){ feedback.innerText="PLEASE SELECT ADMIN OR USER"; return; }
+// LOGIN ACTION
+function login() {
+  const uInput = document.getElementById("username");
+  const pInput = document.getElementById("password");
+  const feedback = document.getElementById("feedback");
 
-  const found=users.find(x=>x.username===u);
-  if(!found){ feedback.innerText="INVALID USERNAME"; return; }
-  if(found.password!==p){ feedback.innerText="WRONG PASSWORD"; return; }
-  if(selectedRole==="user" && found.role==="admin"){ feedback.innerText="KINDLY USE ADMIN BUTTON"; return; }
-  if(selectedRole==="admin" && found.role==="user"){ feedback.innerText="KINDLY USE USER BUTTON"; return; }
+  const u = uInput.value.trim();
+  const p = pInput.value.trim();
 
-  feedback.innerText="WELCOME "+u.toUpperCase();
-  currentUser=found;
+  if (!selectedRole) {
+    feedback.innerText = "PLEASE SELECT ADMIN OR USER";
+    return;
+  }
 
-  // RECORD LOGIN
-  records.push({username:u, role:found.role, loginTime:new Date().toLocaleString(), logoutTime:null});
+  const found = users.find(x => x.username.toLowerCase() === u.toLowerCase());
+  if (!found) {
+    feedback.innerText = "INVALID USERNAME";
+    return;
+  }
+  if (found.password !== p) {
+    feedback.innerText = "WRONG PASSWORD";
+    return;
+  }
+  if (selectedRole === "user" && found.role === "admin" && !found.senior) {
+    feedback.innerText = "KINDLY USE ADMIN BUTTON";
+    return;
+  }
+  if (selectedRole === "admin" && found.role === "user") {
+    feedback.innerText = "KINDLY USE USER BUTTON";
+    return;
+  }
+
+  feedback.innerText = "WELCOME " + found.username.toUpperCase();
+  currentUser = found;
+
+  // Record login history
+  records.push({
+    username: found.username,
+    role: found.role,
+    senior: !!found.senior,
+    loginTime: new Date().toLocaleString(),
+    logoutTime: null
+  });
   localStorage.setItem("records", JSON.stringify(records));
 
   showDashboard();
 }
 
-// SHOW DASHBOARD
-function showDashboard(){
+// SHOW DASHBOARD VIEW
+function showDashboard() {
   document.getElementById("loginPage").style.display = "none";
   const dash = document.getElementById("dashboardPage");
   dash.style.display = "flex";
 
-  // Set role and welcome info
-  let roleText = "";
-  if(currentUser.senior) roleText = "SENIOR ADMINISTRATOR 👑🛡";
-  else if(currentUser.role === "admin") roleText = "ADMINISTRATOR 🛡";
-  else roleText = "USER 👤";
+  // Set role display
+  let roleText = "USER 👤";
+  if (currentUser.senior) roleText = "SENIOR ADMINISTRATOR 👑🛡";
+  else if (currentUser.role === "admin") roleText = "ADMINISTRATOR 🛡";
 
   document.getElementById("roleDisplay").innerText = roleText;
   document.getElementById("welcomeUser").innerText = "WELCOME " + currentUser.username.toUpperCase();
-  document.getElementById("loginTime").innerText = "LOGIN TIME: " + new Date().toLocaleTimeString();
+  document.getElementById("loginTime").innerText = "LOGIN: " + new Date().toLocaleTimeString();
 
   updateNetworkDash();
   loadWallpaper();
 
-  // --- Trigger animations sequentially ---
-  setTimeout(() => dash.classList.add("active"), 50); // fade in dashboard
-  setTimeout(() => document.querySelector(".sidebar").classList.add("active"), 400); // sidebar slide
-  setTimeout(() => document.querySelector(".header-row").classList.add("active"), 700); // header slide
-  setTimeout(() => document.querySelector(".wd-area").classList.add("active"), 1000); // WD area fade/slide
+  // Trigger sequential smooth entrance animations
+  setTimeout(() => dash.classList.add("active"), 50);
+  setTimeout(() => {
+    const sb = document.querySelector(".sidebar");
+    if (sb) sb.classList.add("active");
+  }, 200);
+  setTimeout(() => {
+    const hr = document.querySelector(".header-row");
+    if (hr) hr.classList.add("active");
+  }, 350);
+  setTimeout(() => {
+    const wd = document.querySelector(".wd-area");
+    if (wd) wd.classList.add("active");
+  }, 500);
 }
 
-function logout(){
-  const rec = records.find(r => r.username === currentUser.username && !r.logoutTime);
-  if(rec){ 
-    rec.logoutTime = new Date().toLocaleString(); 
-    localStorage.setItem("records", JSON.stringify(records)); 
+// LOGOUT ACTION
+function logout() {
+  if (currentUser) {
+    const rec = records.find(r => r.username === currentUser.username && !r.logoutTime);
+    if (rec) {
+      rec.logoutTime = new Date().toLocaleString();
+      localStorage.setItem("records", JSON.stringify(records));
+    }
   }
 
-  // Hide dashboard and show login
-  document.getElementById("dashboardPage").style.display = "none";
+  const dash = document.getElementById("dashboardPage");
+  dash.classList.remove("active");
+  dash.style.display = "none";
+
+  const sb = document.querySelector(".sidebar");
+  if (sb) sb.classList.remove("active");
+  const hr = document.querySelector(".header-row");
+  if (hr) hr.classList.remove("active");
+  const wd = document.querySelector(".wd-area");
+  if (wd) wd.classList.remove("active");
+
   document.getElementById("loginPage").style.display = "block";
 
-  // Clear current user and inputs
   currentUser = null;
+  selectedRole = null;
   document.getElementById("username").value = "";
   document.getElementById("password").value = "";
-  selectedRole = null;
   document.getElementById("feedback").innerText = "";
   document.getElementById("adminBtn").classList.remove("inactive");
   document.getElementById("userBtn").classList.remove("inactive");
 
-  // --- NEW FIX: Close any open modals/dialogues ---
-  document.getElementById("menuBox").style.display = "none";
-  document.getElementById("wdDialogue").style.display = "none";
-  document.getElementById("fundDialog").style.display = "none";
-  document.getElementById("dialog").style.display = "none";
+  // Close any open dialogues/modals
+  closeMenu();
+  closeWDDialogue();
+  closeFundDialog();
+  closeDialog();
 }
 
-function updateFarmData(farm,type,key,val){
-  let num=parseInt(val); if(isNaN(num)) num=0;
-  farmData[farm][type][key]=num;
-  localStorage.setItem("farmData",JSON.stringify(farmData));
-}
-// WD DIALOGUES
-function openWDDialogue(type){
+// ---------------------------------------------------------
+// WORKSPACE (WD) DIALOGUES & DATA TABLES
+// ---------------------------------------------------------
+function openWDDialogue(type) {
   pendingWDType = type;
-  document.getElementById("fundDialog").style.display="block";
+  document.getElementById("fundDialog").style.display = "block";
 }
 
-function selectFund(fund){
+function selectFund(fund) {
   selectedFundType = fund;
-  document.getElementById("fundDialog").style.display="none";
+  document.getElementById("fundDialog").style.display = "none";
   loadWDTable(pendingWDType);
 }
 
-function loadWDTable(type){
+function closeFundDialog() {
+  document.getElementById("fundDialog").style.display = "none";
+  pendingWDType = null;
+}
+
+function closeWDDialogue() {
+  document.getElementById("wdDialogue").style.display = "none";
+}
+
+function loadWDTable(type) {
+  if (!type) return;
   const dialogue = document.getElementById("wdDialogue");
   const container = document.getElementById("wdTableContainer");
 
   dialogue.style.display = "block";
-  dialogue.style.background = selectedFundType === "oneacre" ? "#4caf50" : "#2196f3";
+  dialogue.style.background = selectedFundType === "oneacre" ? "#1e3a24" : "#142850";
 
   if (!farmData[selectedFundType]) farmData[selectedFundType] = {};
 
-  let html = "<table><tr>";
-  html += `<tr><th colspan="10" style="text-decoration:underline; font-size:18px; text-align:center;">${type.toUpperCase()}</th></tr>`;
+  let fundTitle = selectedFundType === "oneacre" ? "ONE ACRE FUND" : "NORMAL FUND";
+  let html = `
+    <div style="text-align:center; margin-bottom:15px;">
+      <h2 style="margin:0; color:#ffd700;">${type.toUpperCase()} RECORDS</h2>
+      <span style="font-size:14px; color:#90caf9;">Category: ${fundTitle}</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+  `;
 
-  switch(type){
-    case "planting": html += "<tr><th>Farm</th><th>Seed Bags</th><th>DAP</th><th>No. People</th></tr>"; break;
-    case "weeding": html += "<tr><th>Farm</th><th>No. People</th></tr>"; break;
-    case "fertilizer": html += "<tr><th>Farm</th><th>CAN</th><th>UREA</th><th>No. People</th></tr>"; break;
-    case "harvesting": html += "<tr><th>Farm</th><th>No. People</th><th>Output</th></tr>"; break;
+  switch (type) {
+    case "planting":
+      html += `<th>Farm</th><th>Seed Bags</th><th>DAP (Bags)</th><th>No. People</th>`;
+      break;
+    case "weeding":
+      html += `<th>Farm</th><th>No. People</th>`;
+      break;
+    case "fertilizer":
+      html += `<th>Farm</th><th>CAN (Bags)</th><th>UREA (Bags)</th><th>No. People</th>`;
+      break;
+    case "harvesting":
+      html += `<th>Farm</th><th>No. People</th><th>Output (Bags/Kg)</th>`;
+      break;
   }
 
+  html += `</tr></thead><tbody>`;
+
   farms.forEach(farm => {
-    if (!farmData[selectedFundType][farm]) farmData[selectedFundType][farm] = {};
-    html += `<tr><td>${farm}</td>`;
-    Object.keys(farmData[farm][type]).forEach(key => {
-      html += editableCellFund(farm, type, key);
+    initFarmDataStructure(selectedFundType, farm);
+    html += `<tr><td style="font-weight:bold; color:#ffd700;">${farm}</td>`;
+
+    const metrics = farmData[selectedFundType][farm][type] || {};
+    Object.keys(metrics).forEach(key => {
+      html += editableCellFund(farm, type, key, metrics[key]);
     });
-    html += "</tr>";
+    html += `</tr>`;
   });
 
+  html += `</tbody></table>`;
   container.innerHTML = html;
   localStorage.setItem("farmData", JSON.stringify(farmData));
 }
 
-function editableCellFund(farm, type, key){
-  if (!farmData[selectedFundType][farm][type])
-    farmData[selectedFundType][farm][type] = {};
+function editableCellFund(farm, type, key, val) {
+  const displayVal = (val !== undefined && val !== null) ? val : 0;
+  const canEdit = currentUser && (currentUser.senior || currentUser.role === "admin");
 
-  const val = farmData[selectedFundType][farm][type][key] || 0;
-  if (currentUser.senior)
-    return `<td contenteditable onblur="farmData[selectedFundType]['${farm}']['${type}']['${key}']=parseInt(this.innerText)||0;localStorage.setItem('farmData',JSON.stringify(farmData))">${val}</td>`;
-  return `<td>${val}</td>`;
+  if (canEdit) {
+    return `<td contenteditable="true" 
+                title="Click to edit value"
+                onblur="saveCellData('${farm}','${type}','${key}', this.innerText)">${displayVal}</td>`;
+  }
+  return `<td>${displayVal}</td>`;
 }
 
-// CLOSE WD DIALOGUE
-function closeWDDialogue(){ document.getElementById("wdDialogue").style.display="none"; }
+function saveCellData(farm, type, key, textVal) {
+  const parsed = parseFloat(textVal.trim());
+  const num = isNaN(parsed) ? 0 : parsed;
 
-// ADD/REMOVE FARMS
-function addFarm(){
-  if(!currentUser || (currentUser.role!=="admin" && !currentUser.senior)){
-    alert("Only Admin/Senior Admin can add farms"); 
-    return; 
+  initFarmDataStructure(selectedFundType, farm);
+  farmData[selectedFundType][farm][type][key] = num;
+  localStorage.setItem("farmData", JSON.stringify(farmData));
+}
+
+// ---------------------------------------------------------
+// ADD & REMOVE FARMS
+// ---------------------------------------------------------
+function addFarm() {
+  if (!currentUser || (currentUser.role !== "admin" && !currentUser.senior)) {
+    alert("Only Administrators can add new farms.");
+    return;
   }
 
   const content = document.getElementById("menuContent");
   const menuBox = document.getElementById("menuBox");
+  document.getElementById("menuTitle").innerText = "Add New Farm";
 
-  // Step 1: Enter Farm Name
   content.innerHTML = `
-    <div style="text-align:center; color:white;">
-      <h3>Add New Farm 🌱</h3>
-      <p>Enter Farm Name:</p>
-      <input type="text" id="newFarmName" placeholder="Farm Name" style="padding:10px; border-radius:12px; border:none; width:80%; text-align:center;">
-      <div style="margin-top:15px;">
-        <button onclick="addFarmStep2()" style="padding:10px 20px; border-radius:12px; border:none; background:#2196f3; color:white; font-weight:bold; cursor:pointer;">Next</button>
+    <div style="text-align:center;">
+      <h3 style="color:#ffd700;">Add New Farm 🌱</h3>
+      <p>Enter the name of the new farm:</p>
+      <input type="text" id="newFarmName" placeholder="e.g. Farm 3" style="text-align:center;">
+      <div>
+        <button onclick="addFarmStep2()">Save Farm</button>
       </div>
     </div>
   `;
 
   menuBox.style.display = "block";
-  menuBox.style.background = "#1565c0"; // Blue background
+  document.getElementById("newFarmName").focus();
 }
 
-// Step 2: Confirm and add farm
-function addFarmStep2(){
-  const newFarm = document.getElementById("newFarmName").value.trim();
-  if(!newFarm){ alert("Enter farm name"); return; }
-  if(farms.includes(newFarm)){ alert("Farm already exists"); return; }
+function addFarmStep2() {
+  const input = document.getElementById("newFarmName");
+  if (!input) return;
+  const newFarm = input.value.trim();
 
-  // Add farm to data
+  if (!newFarm) {
+    alert("Please enter a farm name.");
+    return;
+  }
+  if (farms.some(f => f.toLowerCase() === newFarm.toLowerCase())) {
+    alert("A farm with this name already exists.");
+    return;
+  }
+
   farms.push(newFarm);
-  farmData[newFarm] = {
-    planting:{seedBags:0,dap:0,noPeople:0},
-    weeding:{noPeople:0},
-    fertilizer:{can:0,urea:0,noPeople:0},
-    harvesting:{noPeople:0,output:0}
-  };
+  initFarmDataStructure("oneacre", newFarm);
+  initFarmDataStructure("normal", newFarm);
+
   localStorage.setItem("farms", JSON.stringify(farms));
   localStorage.setItem("farmData", JSON.stringify(farmData));
 
-  // Step 3: Show success message
   const content = document.getElementById("menuContent");
   content.innerHTML = `
-    <div style="text-align:center; color:white;">
-      <h3>✅ Farm Added Successfully!</h3>
-      <p>${newFarm}</p>
-      <button onclick="closeMenu()" style="padding:10px 20px; border-radius:12px; border:none; background:#2196f3; color:white; font-weight:bold; cursor:pointer;">Done</button>
+    <div style="text-align:center;">
+      <h3 style="color:#4caf50;">✅ Farm Added Successfully!</h3>
+      <p style="font-size:18px; font-weight:bold;">${newFarm}</p>
+      <button onclick="closeMenu()">Done</button>
     </div>
   `;
 }
 
-function removeFarm(){
-  if(!currentUser || (currentUser.role!=="admin" && !currentUser.senior)){
-    alert("Only Admin/Senior Admin can remove farms"); 
-    return; 
+function removeFarm() {
+  if (!currentUser || (currentUser.role !== "admin" && !currentUser.senior)) {
+    alert("Only Administrators can remove farms.");
+    return;
   }
 
   const content = document.getElementById("menuContent");
   const menuBox = document.getElementById("menuBox");
+  document.getElementById("menuTitle").innerText = "Remove Farm";
 
-  // Step 1: Select farm to remove
   let farmOptions = farms.map(f => `<option value="${f}">${f}</option>`).join("");
   content.innerHTML = `
-    <div style="text-align:center; color:white;">
-      <h3>Remove Farm ❌</h3>
-      <p>Select Farm to Remove:</p>
-      <select id="farmToRemove" style="padding:10px; border-radius:12px; border:none; width:80%; text-align:center;">
-        <option value="" disabled selected>Select Farm</option>
+    <div style="text-align:center;">
+      <h3 style="color:#ff5252;">Remove Farm ❌</h3>
+      <p>Select farm to remove permanently:</p>
+      <select id="farmToRemove">
+        <option value="" disabled selected>-- Select Farm --</option>
         ${farmOptions}
       </select>
-      <div style="margin-top:15px;">
-        <button onclick="removeFarmStep2()" style="padding:10px 20px; border-radius:12px; border:none; background:#2196f3; color:white; font-weight:bold; cursor:pointer;">Next</button>
+      <div>
+        <button onclick="removeFarmStep2()" style="background:#d32f2f; color:white;">Remove</button>
       </div>
     </div>
   `;
 
   menuBox.style.display = "block";
-  menuBox.style.background = "#1565c0"; // Blue background
 }
 
-// Step 2: Confirm removal
-function removeFarmStep2(){
-  const farmName = document.getElementById("farmToRemove").value;
-  if(!farmName){ alert("Select a farm"); return; }
+function removeFarmStep2() {
+  const select = document.getElementById("farmToRemove");
+  if (!select) return;
+  const farmName = select.value;
 
-  // Remove farm from arrays
+  if (!farmName) {
+    alert("Please select a farm to remove.");
+    return;
+  }
+
+  if (!confirm(`Are you sure you want to remove "${farmName}"? This will delete its records.`)) {
+    return;
+  }
+
   farms = farms.filter(f => f !== farmName);
-  delete farmData[farmName];
+  if (farmData.oneacre) delete farmData.oneacre[farmName];
+  if (farmData.normal) delete farmData.normal[farmName];
+
   localStorage.setItem("farms", JSON.stringify(farms));
   localStorage.setItem("farmData", JSON.stringify(farmData));
 
-  // Step 3: Show success message
   const content = document.getElementById("menuContent");
   content.innerHTML = `
-    <div style="text-align:center; color:white;">
-      <h3>✅ Farm Removed Successfully!</h3>
+    <div style="text-align:center;">
+      <h3 style="color:#4caf50;">✅ Farm Removed!</h3>
       <p>${farmName}</p>
-      <button onclick="closeMenu()" style="padding:10px 20px; border-radius:12px; border:none; background:#2196f3; color:white; font-weight:bold; cursor:pointer;">Done</button>
+      <button onclick="closeMenu()">Done</button>
     </div>
   `;
 }
 
-// MENU FUNCTIONALITY (NEW)
+// ---------------------------------------------------------
+// SIDEBAR MENUS
+// ---------------------------------------------------------
 function openMenu(menu) {
   const menuBox = document.getElementById("menuBox");
   const menuTitle = document.getElementById("menuTitle");
   const content = document.getElementById("menuContent");
 
-  menuBox.style.display = "block"; // show modal
-  menuTitle.innerText = menu.replace(/([A-Z])/g, ' $1').trim(); // human-friendly title
-  content.innerHTML = ""; // clear previous content
+  menuBox.style.display = "block";
+  menuTitle.innerText = menu.replace(/([A-Z])/g, ' $1').trim();
+  content.innerHTML = "";
 
-  switch(menu){
-  
-case "userManagement":
-    if(currentUser.role==="user"){
-        content.innerHTML = "<p>ACCESS DENIED 🚫</p>";
+  switch (menu) {
+    case "userManagement": {
+      if (currentUser.role === "user" && !currentUser.senior) {
+        content.innerHTML = "<p style='color:#ff5252;'>ACCESS DENIED 🚫 (Admins Only)</p>";
         break;
-    }
+      }
 
-    // User Management Header
-    let um = `<h3>User Management 👥</h3>`;
+      let um = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="margin:0;">User Management 👥</h3>
+      </div>`;
 
-    // Add User button (triggers successive step flow)
-    if(currentUser.role==="admin" || currentUser.senior){
-        um += `<button class="menu-action-btn" onclick="startAddUser()">➕ Add User</button>`;
-    }
+      um += `<div style="margin-bottom:14px; display:flex; gap:8px;">`;
+      if (currentUser.role === "admin" || currentUser.senior) {
+        um += `<button class="menu-action-btn" type="button" onclick="startAddUser()">➕ Add User</button>`;
+      }
+      if (currentUser.senior) {
+        um += `<button class="menu-action-btn" type="button" style="background:#388e3c !important;" onclick="openProtectDialog()">🔒 Protection</button>`;
+      }
+      um += `</div>`;
 
-    // Protect / Unprotect button (opens focused dialogue)
-    if(currentUser.senior){
-        um += ` <button class="menu-action-btn" onclick="openProtectDialog()">🔒 Protect / Unprotect</button>`;
-    }
-
-    // User list container
-    um += `<div id="userList" style="margin-top:15px;"></div>`;
-
-    content.innerHTML = um;
-
-    // Render user list with Remove / Promote buttons
-    renderUserList();
-    break;
-
-    case "statistics":
-      if(!currentUser.senior && currentUser.role!=="admin"){ content.innerHTML="<p>ACCESS DENIED 🚫</p>"; break;}
-      let stats="<h3>Login/Logout Records 📊</h3>";
-      records.forEach(r=>{
-        let status = r.logoutTime ? r.logoutTime : "ACTIVE";
-        stats+=`<p>${r.username} (${r.role}) - Login: ${r.loginTime} Logout: ${status}</p>`;
-      });
-      if(currentUser.senior) stats+="<button onclick='clearRecords()'>Clear All Records</button>";
-      content.innerHTML=stats; 
+      um += `<div id="userList"></div>`;
+      content.innerHTML = um;
+      renderUserList();
       break;
-case "settings":
-  content.innerHTML = `
-    <h3>Settings ⚙️</h3>
-    <p>Notifications: 
-      <input type="checkbox" id="notifyToggle" onchange="toggleNotifications(this.checked)">
-    </p>
-  `;
-  break;
-   
-case "passwordPolicies":
-  if(currentUser.role === "user"){
-    content.innerHTML = "<p>ACCESS DENIED 🚫</p>";
-    break;
-  }
-  
-  let pwd = "<h3>Password Policies 🔑</h3>";
-  users.forEach(u => { pwd += `<p>${u.username}: ${u.password}</p>` });
-  content.innerHTML = pwd;
-  break;
-    
-case "wallpapers":
-  const wallpaperOptions = [
-    // ↓ Add about 20 working wallpaper URLs
-    "https://images.pexels.com/photos/459225/pexels-photo-459225.jpeg",
-    "https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg",
-    "https://images.pexels.com/photos/163038/farm-tractor-harvest-field-163038.jpeg",
-    "https://images.pexels.com/photos/158607/cow-cattle-farm-barn-158607.jpeg",
-    "https://images.pexels.com/photos/414171/pexels-photo-414171.jpeg",
-    "https://images.pexels.com/photos/247932/pexels-photo-247932.jpeg",
-    "https://unsplash.com/photos/high-angle-photography-of-seawaves-U1XzLHd4VvI",
-    "https://images.pexels.com/photos/34950/pexels-photo.jpg",
-    "https://unsplash.com/photos/river-stream-between-rocks-during-daytime-9LwCEYH1oW4",
-    "https://images.pexels.com/photos/459225/field-wheat-sunset-farm-459225.jpeg",
-    "https://images.pexels.com/photos/66507/pexels-photo-66507.jpeg",
-    "https://unsplash.com/photos/landscape-photography-of-green-and-brown-mountain-7N998BynnFw",
-    "https://images.pexels.com/photos/675951/pexels-photo-675951.jpeg",
-    "https://images.pexels.com/photos/459218/pexels-photo-459218.jpeg",
-    "https://images.pexels.com/photos/132014/pexels-photo-132014.jpeg",
-    "https://images.pexels.com/photos/442184/pexels-photo-442184.jpeg",
-    "https://images.pexels.com/photos/372882/pexels-photo-372882.jpeg",
-    "https://images.pexels.com/photos/167154/farm-fields-wheat-harvest.jpg",
-    "https://images.pexels.com/photos/326055/pexels-photo-326055.jpeg",
-    "https://images.pexels.com/photos/2441066/pexels-photo-2441066.jpeg",
-    "https://images.pexels.com/photos/4488166/pexels-photo-4488166.jpeg",
-    "https://images.pexels.com/photos/197450/pexels-photo-197450.jpeg",
-    "https://images.pexels.com/photos/7752018/pexels-photo-7752018.jpeg"
-  ];
+    }
 
-  let wallHTML = `
-    <h3 style="text-align:center; color:white;">Choose Wallpaper 🖼</h3>
-    <div class="wallpaper-gallery">
-  `;
+    case "statistics": {
+      if (!currentUser.senior && currentUser.role !== "admin") {
+        content.innerHTML = "<p style='color:#ff5252;'>ACCESS DENIED 🚫</p>";
+        break;
+      }
 
-  wallpaperOptions.forEach((url, idx) => {
-    wallHTML += `
-      <img src="${url}" 
-           onclick='setWallpaper("${url}")' 
-           title="Wallpaper ${idx+1}" 
-           class="wallpaper-thumb" />
-    `;
-  });
+      let stats = `<h3>Login & Activity Records 📊</h3>`;
+      if (records.length === 0) {
+        stats += `<p style="color:#90caf9;">No login records recorded yet.</p>`;
+      } else {
+        stats += `<div style="max-height:260px; overflow-y:auto; font-size:13px; line-height:1.6;">`;
+        records.slice().reverse().forEach(r => {
+          let status = r.logoutTime ? `<span style="color:#90caf9;">Out: ${r.logoutTime}</span>` : `<span style="color:#4caf50; font-weight:bold;">ACTIVE</span>`;
+          stats += `<div style="padding:6px; border-bottom:1px solid #263238;">
+            <b>${r.username}</b> (${r.role})<br>
+            In: ${r.loginTime} | ${status}
+          </div>`;
+        });
+        stats += `</div>`;
+      }
 
-  wallHTML += `</div>`;
-  content.innerHTML = wallHTML;
-  break;
+      if (currentUser.senior) {
+        stats += `<div style="margin-top:15px; text-align:center;">
+          <button onclick="clearRecords()" style="background:#d32f2f; color:white;">Clear All Records</button>
+        </div>`;
+      }
+      content.innerHTML = stats;
+      break;
+    }
 
-  case "changePassword":
-  // Step 1: ask for current password
-  content.innerHTML = `
-    <h3>Change Password ✏️</h3>
-    <p>Enter Current Password:</p>
-    <input type="password" id="currentPwd" placeholder="Current Password">
-    <button onclick="verifyCurrentPassword()">Next</button>
-  `;
-  break;  
+    case "settings": {
+      const isNotif = localStorage.getItem("notificationsEnabled") === "true";
+      content.innerHTML = `
+        <h3>Application Settings ⚙️</h3>
+        <div style="margin-top:15px; display:flex; align-items:center; gap:10px;">
+          <input type="checkbox" id="notifyToggle" style="width:auto; cursor:pointer;" 
+                 ${isNotif ? "checked" : ""} 
+                 onchange="toggleNotifications(this.checked)">
+          <label for="notifyToggle" style="cursor:pointer;">Enable System Notifications</label>
+        </div>
+        <p style="font-size:12px; color:#90caf9; margin-top:8px;">
+          Preference is saved automatically to your device.
+        </p>
+      `;
+      break;
+    }
 
-    default: 
-      content.innerHTML="<p>Menu not found</p>";
+    case "passwordPolicies": {
+      content.innerHTML = `
+        <h3>Security & Password Policies 🔑</h3>
+        <div style="font-size:14px; line-height:1.6; color:#e0e6ed;">
+          <p>✔ <b>Minimum Length:</b> Passwords must be at least 4 characters long.</p>
+          <p>✔ <b>Protection:</b> Protected accounts cannot be removed by standard administrators.</p>
+          <p>✔ <b>Role Access:</b> Only Senior Administrators can promote/demote or clear historical logs.</p>
+          <p>✔ <b>Credential Privacy:</b> Cleartext passwords are kept strictly confidential.</p>
+        </div>
+        <p style="margin-top:15px; text-align:center; color:#ffd700; font-size:13px;">
+          To change your own password, use the <b>Change Password</b> option.
+        </p>
+      `;
+      break;
+    }
+
+    case "wallpapers": {
+      const wallpaperOptions = [
+        "https://images.pexels.com/photos/459225/pexels-photo-459225.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/163038/farm-tractor-harvest-field-163038.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/158607/cow-cattle-farm-barn-158607.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/414171/pexels-photo-414171.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/247932/pexels-photo-247932.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/34950/pexels-photo.jpg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/66507/pexels-photo-66507.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/675951/pexels-photo-675951.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/459218/pexels-photo-459218.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/132014/pexels-photo-132014.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/442184/pexels-photo-442184.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/372882/pexels-photo-372882.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/167154/farm-fields-wheat-harvest.jpg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/326055/pexels-photo-326055.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/2441066/pexels-photo-2441066.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/4488166/pexels-photo-4488166.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/197450/pexels-photo-197450.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/7752018/pexels-photo-7752018.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+        "https://images.pexels.com/photos/2132180/pexels-photo-2132180.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1"
+      ];
+
+      let wallHTML = `
+        <h3 style="text-align:center;">Choose Wallpaper 🖼</h3>
+        <p style="text-align:center; font-size:12px; color:#90caf9;">Click an image to set your workspace background</p>
+        <div class="wallpaper-gallery">
+      `;
+      wallpaperOptions.forEach((url, idx) => {
+        wallHTML += `
+          <img src="${url}" 
+               loading="lazy"
+               onclick="setWallpaper('${url}')" 
+               title="Wallpaper ${idx + 1}" 
+               class="wallpaper-thumb" 
+               alt="Wallpaper ${idx + 1}">
+        `;
+      });
+      wallHTML += `</div>`;
+      content.innerHTML = wallHTML;
+      break;
+    }
+
+    case "changePassword": {
+      content.innerHTML = `
+        <h3>Change Password ✏️</h3>
+        <p>Enter Current Password:</p>
+        <input type="password" id="currentPwd" placeholder="Current Password">
+        <button type="button" onclick="verifyCurrentPassword()">Next</button>
+      `;
+      setTimeout(() => {
+        const cp = document.getElementById("currentPwd");
+        if (cp) cp.focus();
+      }, 50);
+      break;
+    }
+
+    default:
+      content.innerHTML = "<p>Menu not found</p>";
   }
 }
 
 function closeMenu() {
-  const menuBox = document.getElementById("menuBox");
-  menuBox.style.display = "none";
+  document.getElementById("menuBox").style.display = "none";
 }
 
-// USER MANAGEMENT FUNCTIONS
-function renderUserList(){
+// ---------------------------------------------------------
+// USER MANAGEMENT & PROTECTION
+// ---------------------------------------------------------
+function renderUserList() {
   const listDiv = document.getElementById("userList");
+  if (!listDiv) return;
   listDiv.innerHTML = "";
 
   users.forEach((u, i) => {
-    let badge = u.senior ? " 👑" : (u.protected ? " 🔒" : "");
-    
-    // User row container
+    let badge = u.senior ? " 👑 (Senior)" : (u.protected ? " 🔒 (Protected)" : "");
+
     const userRow = document.createElement("div");
     userRow.style.display = "flex";
     userRow.style.justifyContent = "space-between";
     userRow.style.alignItems = "center";
-    userRow.style.padding = "6px 10px";
-    userRow.style.marginBottom = "4px";
+    userRow.style.padding = "8px 12px";
+    userRow.style.marginBottom = "6px";
     userRow.style.borderRadius = "10px";
-    userRow.style.background = "#1b2a4e"; // menu box color
+    userRow.style.background = "#0d1b2a";
     userRow.style.color = "white";
 
-    // User info
     const userInfo = document.createElement("span");
-    userInfo.innerText = `${u.username} (${u.role})${badge}`;
+    userInfo.innerText = `${u.username} (${u.role.toUpperCase()})${badge}`;
 
-    // Buttons container
-    const btnContainer = document.createElement("span");
+    const btnContainer = document.createElement("div");
+    btnContainer.style.display = "flex";
+    btnContainer.style.gap = "6px";
 
-    // Remove button (distinct red)
-    if((currentUser.senior || currentUser.role === "admin") && !u.senior){
+    // Remove button
+    if ((currentUser.senior || currentUser.role === "admin") && !u.senior) {
       const removeBtn = document.createElement("button");
       removeBtn.innerHTML = "🗑 Remove";
       removeBtn.style.background = "#d32f2f";
       removeBtn.style.color = "white";
-      removeBtn.style.border = "none";
-      removeBtn.style.borderRadius = "8px";
       removeBtn.style.padding = "4px 8px";
-      removeBtn.style.cursor = "pointer";
-      removeBtn.style.marginRight = "6px";
+      removeBtn.style.fontSize = "12px";
       removeBtn.onclick = () => {
-        if(u.protected && !currentUser.senior){
-          alert("Cannot remove protected user");
+        if (u.protected && !currentUser.senior) {
+          alert("Cannot remove protected user. Restricted by Senior Admin.");
           return;
         }
-        users.splice(i, 1);
-        localStorage.setItem("users", JSON.stringify(users));
-        renderUserList(); // refresh list immediately
+        if (confirm(`Remove user "${u.username}"?`)) {
+          users.splice(i, 1);
+          localStorage.setItem("users", JSON.stringify(users));
+          renderUserList();
+        }
       };
       btnContainer.appendChild(removeBtn);
     }
 
     // Promote / Demote button
-    if(currentUser.senior && !u.senior){
+    if (currentUser.senior && !u.senior) {
       const promoBtn = document.createElement("button");
-      promoBtn.innerHTML = "⭐ Promote/Demote";
+      promoBtn.innerHTML = u.role === "user" ? "⭐ Promote" : "⬇ Demote";
       promoBtn.style.background = "#1976d2";
       promoBtn.style.color = "white";
-      promoBtn.style.border = "none";
-      promoBtn.style.borderRadius = "8px";
       promoBtn.style.padding = "4px 8px";
-      promoBtn.style.cursor = "pointer";
+      promoBtn.style.fontSize = "12px";
       promoBtn.onclick = () => {
         u.role = (u.role === "user") ? "admin" : "user";
         localStorage.setItem("users", JSON.stringify(users));
@@ -491,513 +650,68 @@ function renderUserList(){
       btnContainer.appendChild(promoBtn);
     }
 
-    // Append to row
     userRow.appendChild(userInfo);
     userRow.appendChild(btnContainer);
     listDiv.appendChild(userRow);
   });
 }
-function addUser(){
-  if(currentUser.role==="user"){ alert("Access denied"); return; }
 
-  const username=document.getElementById("newUser").value.trim();
-  const password=document.getElementById("newPass").value.trim();
-  if(!username || !password){ alert("Fill both fields"); return; }
-  if(users.find(u=>u.username===username)){ alert("User exists"); return; }
-
-  users.push({username,password,role:"user",senior:false,protected:false});
-  localStorage.setItem("users",JSON.stringify(users));
-  renderUserList();
-}
-function promoteDemote(idx){
-  if(!currentUser.senior){ alert("Only Senior Admin allowed"); return; }
-
-  const u=users[idx];
-  if(u.senior) return;
-
-  u.role = (u.role==="user") ? "admin" : "user";
-  localStorage.setItem("users",JSON.stringify(users));
-  renderUserList();
-}
-function removeUser(idx){
-  const u=users[idx];
-
-  if(u.protected && !currentUser.senior){
-    alert("USER REMOVAL ACTION RESTRICTED BY SNR ADMIN");
-    return;
-  }
-
-  users.splice(idx,1);
-  localStorage.setItem("users",JSON.stringify(users));
-  renderUserList();
-}
-// Show green user selection box
-function showProtectDialog(){
-  const dialog = document.getElementById("protectDialog");
-  dialog.innerHTML = ""; // clear previous
-
-  users.forEach((u, idx) => {
-    const userRow = document.createElement("p");
-    userRow.innerText = u.username + (u.protected ? " 🔒" : "");
-    userRow.onclick = () => {
-      u.protected = !u.protected;
-      localStorage.setItem("users", JSON.stringify(users));
-      renderUserList();
-      showProtectDialog(); // refresh dialog after toggle
-    };
-    dialog.appendChild(userRow);
-  });
-
-  dialog.style.display = "flex"; // show the green dialogue
-}
-
-// CHANGE PASSWORD
-function changePassword(){ const newPwd=document.getElementById("newPwd").value.trim(); if(!newPwd){ alert("Enter new password"); return;} currentUser.password=newPwd; localStorage.setItem("users",JSON.stringify(users)); alert("Password changed ✅"); }
-
-// CLEAR RECORDS
-function clearRecords(){ if(confirm("Are you sure to delete all records?")){ records=[]; localStorage.setItem("records",JSON.stringify(records)); }}
-
-// WALLPAPER
-function setWallpaper(url){ const wd=document.getElementById("wdArea"); wd.style.backgroundImage=`url(${url})`; localStorage.setItem("selectedWallpaper",url);}
-function loadWallpaper(){ const url=localStorage.getItem("selectedWallpaper"); if(url){ document.getElementById("wdArea").style.backgroundImage=`url(${url})`; }}
-
-// DASHBOARD TIME & NOTIFICATIONS
-function setDashboardTime(val){ console.log("Time set:",val);}
-function toggleNotifications(val){ console.log("Notifications:",val);}
-
-// CLOCK & NETWORK
-function updateClock(){ document.getElementById("clock").innerText=new Date().toLocaleTimeString()+" EAT"; }
-setInterval(updateClock,1000); updateClock();
-function updateNetwork(){ document.getElementById("networkStatus").innerText = navigator.onLine?"🟢 ONLINE":"🔴 OFFLINE";}
-function updateNetworkDash(){ document.getElementById("networkStatusDash").innerText = navigator.onLine?"🟢 ONLINE":"🔴 OFFLINE";}
-window.addEventListener("online", updateNetwork); window.addEventListener("offline", updateNetwork);
-window.addEventListener("online", updateNetworkDash); window.addEventListener("offline", updateNetworkDash);
-updateNetwork(); updateNetworkDash();
-
-// DIALOG
-function forgotPassword(){ document.getElementById("dialog").style.display="block"; }
-function closeDialog(){ document.getElementById("dialog").style.display="none"; }
-window.addEventListener("beforeunload", () => {
-  if(currentUser){
-    const rec = records.find(r => r.username === currentUser.username && !r.logoutTime);
-    if(rec) rec.logoutTime = new Date().toLocaleString();
-    localStorage.setItem("records", JSON.stringify(records));
-  }
-});
-
-// Step 1: Verify current password
-function verifyCurrentPassword() {
-    const currentPwd = document.getElementById("currentPwd").value.trim();
-    if (!currentPwd) {
-        alert("Enter current password");
-        return;
-    }
-    if (currentPwd !== currentUser.password) {
-        alert("Incorrect password");
-        return;
-    }
-
-    // Step 2: Enter new password
-    const content = document.getElementById("menuContent");
-    content.innerHTML = `
-        <h3>Change Password ✏️</h3>
-        <p>Enter New Password:</p>
-        <input type="password" id="newPwdStep" placeholder="New Password">
-        <p>Confirm New Password:</p>
-        <input type="password" id="confirmPwdStep" placeholder="Confirm Password">
-        <button id="changePwdBtn">Change</button>
-        <div id="changePwdFeedback" style="color:lime; text-align:center; margin-top:10px;"></div>
-    `;
-
-    // Attach event listener to the new Change button
-    document.getElementById("changePwdBtn").addEventListener("click", finalizePasswordChange);
-}
-
-// Step 3: Finalize password change
-function finalizePasswordChange() {
-    const newPwd = document.getElementById("newPwdStep").value.trim();
-    const confirmPwd = document.getElementById("confirmPwdStep").value.trim();
-    const feedback = document.getElementById("changePwdFeedback");
-
-    if (!newPwd || !confirmPwd) {
-        feedback.innerText = "Enter password in both fields!";
-        return;
-    }
-
-    if (newPwd !== confirmPwd) {
-        feedback.innerText = "Passwords do not match!";
-        return;
-    }
-
-    // Update password and persist
-    currentUser.password = newPwd;
-    localStorage.setItem("users", JSON.stringify(users));
-
-    // Show success feedback
-    feedback.innerText = "PASSWORD CHANGED ✅";
-
-    // Auto-close menu after 1.5s
-    setTimeout(() => {
-        closeMenu();
-    }, 1500);
-}
-// Utility function to show steps with animation
-function showStep(htmlContent){
+function startAddUser() {
   const content = document.getElementById("menuContent");
-
-  // Remove previous step
-  content.innerHTML = "";
-
-  // Create new step container
-  const stepDiv = document.createElement("div");
-  stepDiv.classList.add("step-content");
-  stepDiv.innerHTML = htmlContent;
-  content.appendChild(stepDiv);
-
-  // Trigger animation
-  setTimeout(()=> stepDiv.classList.add("active"), 50);
-}// Start Add User process (step 1)
-function startAddUser(){
-  showStep(`
-    <p>Enter New Username:</p>
-    <input type="text" id="newUserStep" placeholder="Username">
-    <button onclick="addUserStep2()">Next</button>
-  `);
-}
-
-// Step 2: Enter password
-function addUserStep2(){
-  const username = document.getElementById("newUserStep").value.trim();
-  if(!username){ alert("Enter username"); return; }
-
-  showStep(`
-    <p>Enter Password for ${username}:</p>
-    <input type="password" id="newPassStep" placeholder="Password">
-    <button onclick="finalizeAddUser()">Add User</button>
-  `);
-}
-
-// Step 3: Finalize user addition
-function finalizeAddUser(){
-  const username = document.getElementById("newUserStep").value.trim();
-  const password = document.getElementById("newPassStep").value.trim();
-
-  if(!username || !password){ alert("Fill both fields"); return; }
-  if(users.find(u=>u.username===username)){ alert("User exists"); return; }
-
-  users.push({username, password, role:"user", senior:false, protected:false});
-  localStorage.setItem("users", JSON.stringify(users));
-  alert("User added ✅");
-  renderUserList();
-  closeMenu();
-}
-function closeFundDialog(){
-  document.getElementById("fundDialog").style.display = "none";
-  pendingWDType = null;
-}
-function updateDashboardClock() {
-  const clock = document.getElementById("dashboardClock");
-  if(clock){
-    const now = new Date();
-    const h = String(now.getHours()).padStart(2,'0');
-    const m = String(now.getMinutes()).padStart(2,'0');
-    const s = String(now.getSeconds()).padStart(2,'0');
-    clock.innerText = `${h}:${m}:${s} EAT`;
-  }
-}
-setInterval(updateDashboardClock, 1000);
-updateDashboardClock();
-function showProtectDialog(){
-  var dialog = document.getElementById("protectDialog");
-  dialog.innerHTML = ""; // clear previous
-
-  users.forEach(function(u, idx){
-    var userRow = document.createElement("p");
-    userRow.innerText = u.username + (u.protected ? " 🔒" : "");
-    userRow.style.cursor = "pointer";
-    userRow.style.margin = "4px 0";
-    userRow.style.padding = "6px 10px";
-    userRow.style.borderRadius = "12px";
-    userRow.style.backgroundColor = "#2e7d32"; // green box
-    userRow.style.color = "white";
-
-    userRow.onclick = function(){
-      u.protected = !u.protected;
-      localStorage.setItem("users", JSON.stringify(users));
-      renderUserList();
-      showProtectDialog(); // refresh after toggle
-    };
-
-    dialog.appendChild(userRow);
-  });
-
-  dialog.style.display = "flex";
-  dialog.style.flexDirection = "column";
-  dialog.style.gap = "6px";
-  dialog.style.marginTop = "8px";
-}
-// ----------------------------
-// ENABLE ENTER KEY ACTIONS
-// ----------------------------
-
-// Trigger login on Enter key in username or password fields
-document.getElementById("username").addEventListener("keypress", function(e){
-  if(e.key === "Enter") login();
-});
-document.getElementById("password").addEventListener("keypress", function(e){
-  if(e.key === "Enter") login();
-});
-
-// Allow Enter key to close dialogs
-document.addEventListener("keydown", function(e){
-  // Forgot Password dialog
-  const dialog = document.getElementById("dialog");
-  if(dialog.style.display === "block" && e.key === "Enter"){
-    closeDialog();
-  }
-
-  // Fund selection dialog
-  const fundDialog = document.getElementById("fundDialog");
-  if(fundDialog.style.display === "block" && e.key === "Enter"){
-    // Optional: default to "Normal" plan
-    selectFund("normal");
-  }
-
-  // You can add other dialog Enter triggers here if needed
-});
-
-// Autofocus first input on login page for faster UX
-document.getElementById("username").focus();
-// ----------------------------
-// ENTER KEY SUPPORT FOR MENU BOXES
-// ----------------------------
-
-// Add User Step 1: Username
-document.addEventListener("keydown", function(e){
-  const newUserStep = document.getElementById("newUserStep");
-  if(newUserStep && e.key === "Enter"){
-    addUserStep2();
-  }
-});
-
-// Add User Step 2: Password
-document.addEventListener("keydown", function(e){
-  const newPassStep = document.getElementById("newPassStep");
-  if(newPassStep && e.key === "Enter"){
-    finalizeAddUser();
-  }
-});
-
-// Change Password Step 1: Current Password
-document.addEventListener("keydown", function(e){
-  const currentPwd = document.getElementById("currentPwd");
-  if(currentPwd && e.key === "Enter"){
-    verifyCurrentPassword();
-  }
-});
-
-// Change Password Step 2: New Password
-document.addEventListener("keydown", function(e){
-  const newPwdStep = document.getElementById("newPwdStep");
-  if(newPwdStep && e.key === "Enter"){
-    confirmNewPassword();
-  }
-});
-
-// Change Password Step 3: Confirm Password
-document.addEventListener("keydown", function(e){
-  const confirmPwdStep = document.getElementById("confirmPwdStep");
-  if(confirmPwdStep && e.key === "Enter"){
-    finalizePasswordChange();
-  }
-});
-
-// Protect / Unprotect: select user from dialogue
-document.addEventListener("keydown", function(e){
-  const protectDialog = document.getElementById("protectDialog");
-  if(protectDialog && protectDialog.style.display === "block" && e.key === "Enter"){
-    // If a user row is focused, trigger click
-    const focusedRow = document.activeElement;
-    if(focusedRow && focusedRow.tagName === "P"){
-      focusedRow.click();
-    }
-  }
-});
-// ----------------------------
-// ENTER KEY SUPPORT FOR MENU BOXES
-// ----------------------------
-
-// Add User Step 1: Username
-document.addEventListener("keydown", function(e){
-  const newUserStep = document.getElementById("newUserStep");
-  if(newUserStep && e.key === "Enter"){
-    addUserStep2();
-  }
-});
-
-// Add User Step 2: Password
-document.addEventListener("keydown", function(e){
-  const newPassStep = document.getElementById("newPassStep");
-  if(newPassStep && e.key === "Enter"){
-    finalizeAddUser();
-  }
-});
-
-// Change Password Step 1: Current Password
-document.addEventListener("keydown", function(e){
-  const currentPwd = document.getElementById("currentPwd");
-  if(currentPwd && e.key === "Enter"){
-    verifyCurrentPassword();
-  }
-});
-
-// Change Password Step 2: New Password
-document.addEventListener("keydown", function(e){
-  const newPwdStep = document.getElementById("newPwdStep");
-  if(newPwdStep && e.key === "Enter"){
-    confirmNewPassword();
-  }
-});
-
-// Change Password Step 3: Confirm Password
-document.addEventListener("keydown", function(e){
-  const confirmPwdStep = document.getElementById("confirmPwdStep");
-  if(confirmPwdStep && e.key === "Enter"){
-    finalizePasswordChange();
-  }
-});
-
-// Protect / Unprotect: select user from dialogue
-document.addEventListener("keydown", function(e){
-  const protectDialog = document.getElementById("protectDialog");
-  if(protectDialog && protectDialog.style.display === "block" && e.key === "Enter"){
-    // If a user row is focused, trigger click
-    const focusedRow = document.activeElement;
-    if(focusedRow && focusedRow.tagName === "P"){
-      focusedRow.click();
-    }
-  }
-});
-// ----------------------------
-// AUTO-FOCUS INPUTS IN MENU BOX
-// ----------------------------
-
-function autoFocusStep() {
-  // Add User Step 1: Username
-  const newUserStep = document.getElementById("newUserStep");
-  if(newUserStep) { newUserStep.focus(); return; }
-
-  // Add User Step 2: Password
-  const newPassStep = document.getElementById("newPassStep");
-  if(newPassStep) { newPassStep.focus(); return; }
-
-  // Change Password Step 1: Current Password
-  const currentPwd = document.getElementById("currentPwd");
-  if(currentPwd) { currentPwd.focus(); return; }
-
-  // Change Password Step 2: New Password
-  const newPwdStep = document.getElementById("newPwdStep");
-  if(newPwdStep) { newPwdStep.focus(); return; }
-
-  // Change Password Step 3: Confirm Password
-  const confirmPwdStep = document.getElementById("confirmPwdStep");
-  if(confirmPwdStep) { confirmPwdStep.focus(); return; }
-}
-
-// Call autoFocusStep whenever menu content changes
-const menuContentObserver = new MutationObserver(autoFocusStep);
-const menuContent = document.getElementById("menuContent");
-menuContentObserver.observe(menuContent, { childList: true, subtree: true });
-
-// Initial call in case content is already loaded
-autoFocusStep();
-// ----------------------------
-// PROTECT / UNPROTECT DIALOGUE
-// ----------------------------
-
-// Function to open Protect/Unprotect user dialogue
-function openProtectDialog() {
-  const content = document.getElementById("menuContent");
-  content.innerHTML = `<h3>Protect / Unprotect Users</h3>
-    <div id="protectDialog" style="max-height:300px; overflow-y:auto; padding:10px;"></div>`;
-
-  const protectDialog = document.getElementById("protectDialog");
-
-  // Populate users
-  users.forEach((u, idx) => {
-    const p = document.createElement("p");
-    p.tabIndex = 0; // make focusable
-    p.style.cursor = "pointer";
-    p.style.padding = "6px 10px";
-    p.style.borderRadius = "10px";
-    p.style.margin = "4px 0";
-    p.style.background = u.protected ? "#388e3c" : "#4caf50";
-    p.style.color = "white";
-    p.innerText = `${u.username} (${u.role}) ${u.senior ? "👑" : ""} ${u.protected ? "🔒" : ""}`;
-    p.addEventListener("click", () => {
-      u.protected = !u.protected;
-      localStorage.setItem("users", JSON.stringify(users));
-      renderUserList();
-      openProtectDialog(); // refresh list
-    });
-    protectDialog.appendChild(p);
-  });
-
-  // Auto-focus the first user
-  if(protectDialog.firstChild) protectDialog.firstChild.focus();
-}
-
-// ENTER key support for protect/unprotect
-document.addEventListener("keydown", function(e){
-  const protectDialog = document.getElementById("protectDialog");
-  if(protectDialog && protectDialog.style.display !== "none" && e.key === "Enter"){
-    const focusedRow = document.activeElement;
-    if(focusedRow && focusedRow.tagName === "P"){
-      focusedRow.click(); // toggle protection
-    }
-  }
-});
-function startAddUser(){
-  const content = document.getElementById("menuContent");
-
   content.innerHTML = `
     <h3>Add New User 👤</h3>
-
     <div class="step-box">
-      <input id="newUserStep" placeholder="Enter username">
-      <button onclick="addUserStep2()">Next ➡</button>
+      <label>Enter Username:</label>
+      <input id="newUserStep" placeholder="Username" autocomplete="off">
+      <button type="button" onclick="addUserStep2()">Next ➡</button>
     </div>
   `;
-
-  document.getElementById("newUserStep").focus();
+  setTimeout(() => {
+    const el = document.getElementById("newUserStep");
+    if (el) el.focus();
+  }, 50);
 }
-function addUserStep2(){
-  const username = document.getElementById("newUserStep").value.trim();
-  if(!username) return alert("Username required");
 
-  if(users.find(u => u.username === username)){
-    alert("User already exists");
+function addUserStep2() {
+  const uInput = document.getElementById("newUserStep");
+  if (!uInput) return;
+  const username = uInput.value.trim();
+
+  if (!username) {
+    alert("Username is required.");
+    return;
+  }
+  if (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
+    alert("User already exists.");
     return;
   }
 
   usersTempUsername = username;
-
   const content = document.getElementById("menuContent");
 
   content.innerHTML = `
     <h3>Add New User 👤</h3>
-
     <div class="step-box">
-      <input id="newPassStep" type="password" placeholder="Enter password">
-      <button onclick="finalizeAddUser()">✅ Create User</button>
+      <label>Set Password for <b>${username}</b>:</label>
+      <input id="newPassStep" type="password" placeholder="Password">
+      <button type="button" onclick="finalizeAddUser()">✅ Create User</button>
     </div>
   `;
-
-  document.getElementById("newPassStep").focus();
+  setTimeout(() => {
+    const el = document.getElementById("newPassStep");
+    if (el) el.focus();
+  }, 50);
 }
-function finalizeAddUser(){
-  const password = document.getElementById("newPassStep").value.trim();
-  if(!password) return alert("Password required");
+
+function finalizeAddUser() {
+  const pInput = document.getElementById("newPassStep");
+  if (!pInput) return;
+  const password = pInput.value.trim();
+
+  if (!password) {
+    alert("Password is required.");
+    return;
+  }
 
   users.push({
     username: usersTempUsername,
@@ -1008,8 +722,245 @@ function finalizeAddUser(){
   });
 
   localStorage.setItem("users", JSON.stringify(users));
-
-  alert("User added successfully ✅");
-  showMenu("userManagement");
+  alert(`User "${usersTempUsername}" added successfully ✅`);
+  openMenu("userManagement");
 }
 
+function openProtectDialog() {
+  const content = document.getElementById("menuContent");
+  content.innerHTML = `
+    <h3>Protect / Unprotect Users 🔒</h3>
+    <p style="font-size:13px; color:#90caf9;">Click a user to toggle protection status.</p>
+    <div id="protectDialog" class="protect-dialog"></div>
+    <div style="margin-top:15px; text-align:center;">
+      <button onclick="openMenu('userManagement')">Done</button>
+    </div>
+  `;
+
+  const protectDialog = document.getElementById("protectDialog");
+  users.forEach(u => {
+    const p = document.createElement("p");
+    p.className = u.protected ? "protected" : "";
+    p.innerText = `${u.username} (${u.role.toUpperCase()}) ${u.senior ? "👑" : ""} ${u.protected ? "🔒" : "🔓"}`;
+    p.onclick = () => {
+      if (u.senior) {
+        alert("Senior Admin cannot be modified.");
+        return;
+      }
+      u.protected = !u.protected;
+      localStorage.setItem("users", JSON.stringify(users));
+      openProtectDialog();
+    };
+    protectDialog.appendChild(p);
+  });
+}
+
+// ---------------------------------------------------------
+// PASSWORD CHANGE FLOW
+// ---------------------------------------------------------
+function verifyCurrentPassword() {
+  const currentPwdInput = document.getElementById("currentPwd");
+  if (!currentPwdInput) return;
+  const currentPwd = currentPwdInput.value.trim();
+
+  if (!currentPwd) {
+    alert("Please enter current password.");
+    return;
+  }
+  if (currentPwd !== currentUser.password) {
+    alert("Incorrect current password.");
+    return;
+  }
+
+  const content = document.getElementById("menuContent");
+  content.innerHTML = `
+    <h3>Change Password ✏️</h3>
+    <p>Enter New Password:</p>
+    <input type="password" id="newPwdStep" placeholder="New Password">
+    <p>Confirm New Password:</p>
+    <input type="password" id="confirmPwdStep" placeholder="Confirm Password">
+    <button id="changePwdBtn" type="button" onclick="finalizePasswordChange()">Change Password</button>
+    <div id="changePwdFeedback" style="color:lime; text-align:center; margin-top:10px;"></div>
+  `;
+
+  setTimeout(() => {
+    const el = document.getElementById("newPwdStep");
+    if (el) el.focus();
+  }, 50);
+}
+
+function finalizePasswordChange() {
+  const newPwdEl = document.getElementById("newPwdStep");
+  const confirmPwdEl = document.getElementById("confirmPwdStep");
+  const feedback = document.getElementById("changePwdFeedback");
+
+  if (!newPwdEl || !confirmPwdEl) return;
+
+  const newPwd = newPwdEl.value.trim();
+  const confirmPwd = confirmPwdEl.value.trim();
+
+  if (!newPwd || !confirmPwd) {
+    feedback.innerText = "Please fill in both fields.";
+    feedback.style.color = "#ff5252";
+    return;
+  }
+  if (newPwd !== confirmPwd) {
+    feedback.innerText = "Passwords do not match.";
+    feedback.style.color = "#ff5252";
+    return;
+  }
+
+  currentUser.password = newPwd;
+  // Update in user list as well
+  const uObj = users.find(x => x.username === currentUser.username);
+  if (uObj) uObj.password = newPwd;
+
+  localStorage.setItem("users", JSON.stringify(users));
+
+  feedback.innerText = "PASSWORD CHANGED SUCCESSFULLY ✅";
+  feedback.style.color = "#4caf50";
+
+  setTimeout(() => {
+    closeMenu();
+  }, 1200);
+}
+
+// ---------------------------------------------------------
+// SETTINGS & MISC HELPERS
+// ---------------------------------------------------------
+function toggleNotifications(val) {
+  localStorage.setItem("notificationsEnabled", val ? "true" : "false");
+}
+
+function clearRecords() {
+  if (confirm("Are you sure you want to permanently delete all login/logout records?")) {
+    records = [];
+    localStorage.setItem("records", JSON.stringify(records));
+    openMenu("statistics");
+  }
+}
+
+function setWallpaper(url) {
+  const wd = document.getElementById("wdArea");
+  if (wd) wd.style.backgroundImage = `url("${url}")`;
+  localStorage.setItem("selectedWallpaper", url);
+}
+
+function loadWallpaper() {
+  const url = localStorage.getItem("selectedWallpaper");
+  const wd = document.getElementById("wdArea");
+  if (url && wd) {
+    wd.style.backgroundImage = `url("${url}")`;
+  }
+}
+
+// ---------------------------------------------------------
+// LIVE CLOCKS & NETWORK MONITORS
+// ---------------------------------------------------------
+function updateClock() {
+  const c = document.getElementById("clock");
+  if (c) c.innerText = new Date().toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function updateDashboardClock() {
+  const clock = document.getElementById("dashboardClock");
+  if (clock) {
+    clock.innerText = new Date().toLocaleTimeString();
+  }
+}
+setInterval(updateDashboardClock, 1000);
+updateDashboardClock();
+
+function updateNetwork() {
+  const el = document.getElementById("networkStatus");
+  if (el) {
+    el.innerText = navigator.onLine ? "🟢 ONLINE" : "🔴 OFFLINE";
+  }
+}
+
+function updateNetworkDash() {
+  const el = document.getElementById("networkStatusDash");
+  if (el) {
+    const isOnline = navigator.onLine;
+    el.innerText = isOnline ? "🟢 ONLINE" : "🔴 OFFLINE";
+    el.classList.toggle("online", isOnline);
+    el.classList.toggle("offline", !isOnline);
+  }
+}
+
+window.addEventListener("online", () => { updateNetwork(); updateNetworkDash(); });
+window.addEventListener("offline", () => { updateNetwork(); updateNetworkDash(); });
+updateNetwork();
+updateNetworkDash();
+
+// FORGOT PASSWORD DIALOG
+function forgotPassword() {
+  document.getElementById("dialog").style.display = "block";
+}
+function closeDialog() {
+  document.getElementById("dialog").style.display = "none";
+}
+
+// ---------------------------------------------------------
+// GLOBAL ENTER KEY HANDLING
+// ---------------------------------------------------------
+document.addEventListener("keydown", function(e) {
+  if (e.key !== "Enter") return;
+
+  // Login inputs
+  if (document.activeElement.id === "username" || document.activeElement.id === "password") {
+    login();
+    return;
+  }
+
+  // Add User Step 1
+  if (document.activeElement.id === "newUserStep") {
+    addUserStep2();
+    return;
+  }
+
+  // Add User Step 2
+  if (document.activeElement.id === "newPassStep") {
+    finalizeAddUser();
+    return;
+  }
+
+  // Change Password Step 1
+  if (document.activeElement.id === "currentPwd") {
+    verifyCurrentPassword();
+    return;
+  }
+
+  // Change Password Step 2 (focus confirm)
+  if (document.activeElement.id === "newPwdStep") {
+    const confirmInput = document.getElementById("confirmPwdStep");
+    if (confirmInput) confirmInput.focus();
+    return;
+  }
+
+  // Change Password Step 3 (submit)
+  if (document.activeElement.id === "confirmPwdStep") {
+    finalizePasswordChange();
+    return;
+  }
+
+  // Add Farm Step 1
+  if (document.activeElement.id === "newFarmName") {
+    addFarmStep2();
+    return;
+  }
+
+  // Close simple dialogs on enter if active
+  const dialog = document.getElementById("dialog");
+  if (dialog && dialog.style.display === "block") {
+    closeDialog();
+  }
+});
+
+// Auto-focus username on initial load
+window.addEventListener("DOMContentLoaded", () => {
+  const u = document.getElementById("username");
+  if (u) u.focus();
+});
